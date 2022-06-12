@@ -8,7 +8,8 @@ sso-report.py script helps automate the process to get SSO assignments for all t
 | ----------------- | ------------ | ------------------ | -------------------------- | ----- |
 | \***\*\*\*\***468 | QA           | AWSPowerUserAccess | AWSSecurityAuditPowerUsers | GROUP |
 | \***\*\*\*\***468 | QA           | AWSReadOnlyAccess  | ReadOnlyAccess             | GROUP |
-| \***\*\*\*\***468 | Dev          | AWSPowerUserAccess | AWSSecurityAuditPowerUsers | GROUP |
-| \***\*\*\*\***468 | Dev          | AWSPowerUserAccess | user@email.com             | USER  |
+| \***\*\*\*\***728 | Dev          | AWSPowerUserAccess | AWSSecurityAuditPowerUsers | GROUP |
+| \***\*\*\*\***728 | Dev          | AWSPowerUserAccess | user@email.com             | USER  |
+| \***\*\*\*\***763 | Test         | AWSPowerUserAccess | AWSSecurityAuditPowerUsers | GROUP |
 
 <br>
