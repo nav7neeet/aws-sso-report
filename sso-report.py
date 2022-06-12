@@ -3,9 +3,8 @@ import boto3
 from botocore.exceptions import ClientError
 import pandas
 
-MANAGEMENT_ORG_ROLE = "list-accounts-role"
 MANAGEMENT_SSO_ROLE = "sso-read-only-role"
-MANAGEMENT_ACCOUNT_ID = "975300453774"
+MANAGEMENT_ACCOUNT_ID = "000000000000"
 ROLE_SESSION_NAME = "sso-report"
 
 logger = logging.getLogger()
