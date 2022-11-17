@@ -3,17 +3,19 @@ import boto3
 from botocore.exceptions import ClientError
 import pandas
 
-MANAGEMENT_SSO_ROLE = "sso-read-only-role"
-MANAGEMENT_ACCOUNT_ID = "000000000000"
+MNGMT_ACCNT_ID = "975300453774"
+MNGMT_ACCNT_ROLE = "sso-read-only-role"
 ROLE_SESSION_NAME = "sso-report"
 
 logger = logging.getLogger()
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 
-def get_client(role, service_name):
+def get_client(role_arn, service_name):
     sts_client = boto3.client("sts")
-    response = sts_client.assume_role(RoleArn=role, RoleSessionName=ROLE_SESSION_NAME)
+    response = sts_client.assume_role(
+        RoleArn=role_arn, RoleSessionName=ROLE_SESSION_NAME
+    )
     temp_creds = response["Credentials"]
 
     client = boto3.client(
@@ -25,22 +27,23 @@ def get_client(role, service_name):
     return client
 
 
-def get_account_list(organizations):
-    account_list = []
+def get_accnt_list(organizations):
+    accnt_list = []
     paginator = organizations.get_paginator("list_accounts")
-    pages = paginator.paginate()
+    response_iterator = paginator.paginate()
 
-    for page in pages:
-        for account in page["Accounts"]:
-            account_list.append({"name": account["Name"], "id": account["Id"]})
+    for response in response_iterator:
+        for accnt in response["Accounts"]:
+            accnt_list.append({"name": accnt["Name"], "id": accnt["Id"]})
 
-    return account_list
+    return accnt_list
 
-def get_account_assignment(sso_admin, account_id, instance_arn):
+
+def get_accnt_assignment(sso_admin, account_id, instance_arn):
     response = sso_admin.list_permission_sets_provisioned_to_account(
         InstanceArn=instance_arn, AccountId=account_id
     )
-    account_assignments = []
+    accnt_assignment = []
 
     for permission_set in response["PermissionSets"]:
         response = sso_admin.list_account_assignments(
@@ -49,12 +52,11 @@ def get_account_assignment(sso_admin, account_id, instance_arn):
             PermissionSetArn=permission_set,
         )
         for item in response["AccountAssignments"]:
-            account_assignments.append(item)
-    return account_assignments
+            accnt_assignment.append(item)
+    return accnt_assignment
 
 
 def get_principal_name(identity_store, identity_store_id, principal_id, principal_type):
-
     if principal_type == "GROUP":
         response = identity_store.describe_group(
             IdentityStoreId=identity_store_id, GroupId=principal_id
@@ -108,11 +110,11 @@ def write_to_excel(table):
 
 def main():
     try:
-        role = f"arn:aws:iam::{MANAGEMENT_ACCOUNT_ID}:role/{MANAGEMENT_SSO_ROLE}"
-        client = get_client(role, "organizations")
-        account_list = get_account_list(client)
+        role = f"arn:aws:iam::{MNGMT_ACCNT_ID}:role/{MNGMT_ACCNT_ROLE}"
+        organizations = get_client(role, "organizations")
         sso_admin = get_client(role, "sso-admin")
         identity_store = get_client(role, "identitystore")
+        accnt_list = get_accnt_list(organizations)
         response = sso_admin.list_instances()
 
         data_frame = get_data_frame()
@@ -120,13 +122,13 @@ def main():
             identity_store_id = sso_instance["IdentityStoreId"]
             instance_arn = sso_instance["InstanceArn"]
 
-            for account in account_list:
-                logger.info(f'sso group names for {account["id"]}')
-                account_assignments = get_account_assignment(
-                    sso_admin, account["id"], instance_arn
+            for accnt in accnt_list:
+                logger.info(f'sso group names for {accnt["id"]}')
+                accnt_assignment = get_accnt_assignment(
+                    sso_admin, accnt["id"], instance_arn
                 )
 
-                for item in account_assignments:
+                for item in accnt_assignment:
                     data = []
                     principal_name = get_principal_name(
                         identity_store,
@@ -137,8 +139,8 @@ def main():
                     permission_set_name = get_permission_set_name(
                         sso_admin, instance_arn, item["PermissionSetArn"]
                     )
-                    data.append(account["id"])
-                    data.append(account["name"])
+                    data.append(accnt["id"])
+                    data.append(accnt["name"])
                     data.append(permission_set_name)
                     data.append(principal_name)
                     data.append(item["PrincipalType"])
