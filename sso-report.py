@@ -1,4 +1,5 @@
 import logging
+import time
 import boto3
 from botocore.exceptions import ClientError
 import pandas
@@ -6,18 +7,13 @@ import pandas
 MNGMT_ACCNT_ID = "975300453774"
 MNGMT_ACCNT_ROLE = "sso-read-only-role"
 ROLE_SESSION_NAME = "sso-report"
+role = f"arn:aws:iam::{MNGMT_ACCNT_ID}:role/{MNGMT_ACCNT_ROLE}"
 
 logger = logging.getLogger()
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 
-def get_client(role_arn, service_name):
-    sts_client = boto3.client("sts")
-    response = sts_client.assume_role(
-        RoleArn=role_arn, RoleSessionName=ROLE_SESSION_NAME
-    )
-    temp_creds = response["Credentials"]
-
+def get_client(service_name, temp_creds):
     client = boto3.client(
         service_name,
         aws_access_key_id=temp_creds["AccessKeyId"],
@@ -34,6 +30,7 @@ def get_accnt_list(organizations):
 
     for response in response_iterator:
         for accnt in response["Accounts"]:
+            # if accnt["Id"] != "541383790912":
             accnt_list.append({"name": accnt["Name"], "id": accnt["Id"]})
 
     return accnt_list
@@ -43,17 +40,19 @@ def get_accnt_assignment(sso_admin, account_id, instance_arn):
     response = sso_admin.list_permission_sets_provisioned_to_account(
         InstanceArn=instance_arn, AccountId=account_id
     )
+    print(f"{account_id} - {response}")
     accnt_assignment = []
 
-    for permission_set in response["PermissionSets"]:
-        response = sso_admin.list_account_assignments(
-            InstanceArn=instance_arn,
-            AccountId=account_id,
-            PermissionSetArn=permission_set,
-        )
-        for item in response["AccountAssignments"]:
-            accnt_assignment.append(item)
-    return accnt_assignment
+    if "PermissionSets" in response:
+        for permission_set in response["PermissionSets"]:
+            response = sso_admin.list_account_assignments(
+                InstanceArn=instance_arn,
+                AccountId=account_id,
+                PermissionSetArn=permission_set,
+            )
+            for item in response["AccountAssignments"]:
+                accnt_assignment.append(item)
+        return accnt_assignment
 
 
 def get_principal_name(identity_store, identity_store_id, principal_id, principal_type):
@@ -104,16 +103,17 @@ def create_table(data_frame, data):
 
 
 def write_to_excel(table):
-    file_name = "sso-report.xlsx"
+    file_name = "report.xlsx"
     table.to_excel(file_name)
 
 
 def main():
     try:
-        role = f"arn:aws:iam::{MNGMT_ACCNT_ID}:role/{MNGMT_ACCNT_ROLE}"
-        organizations = get_client(role, "organizations")
-        sso_admin = get_client(role, "sso-admin")
-        identity_store = get_client(role, "identitystore")
+        sts = boto3.client("sts")
+        response = sts.assume_role(RoleArn=role, RoleSessionName=ROLE_SESSION_NAME)
+        organizations = get_client("organizations", response["Credentials"])
+        sso_admin = get_client("sso-admin", response["Credentials"])
+        identity_store = get_client("identitystore", response["Credentials"])
         accnt_list = get_accnt_list(organizations)
         response = sso_admin.list_instances()
 
@@ -128,23 +128,24 @@ def main():
                     sso_admin, accnt["id"], instance_arn
                 )
 
-                for item in accnt_assignment:
-                    data = []
-                    principal_name = get_principal_name(
-                        identity_store,
-                        identity_store_id,
-                        item["PrincipalId"],
-                        item["PrincipalType"],
-                    )
-                    permission_set_name = get_permission_set_name(
-                        sso_admin, instance_arn, item["PermissionSetArn"]
-                    )
-                    data.append(accnt["id"])
-                    data.append(accnt["name"])
-                    data.append(permission_set_name)
-                    data.append(principal_name)
-                    data.append(item["PrincipalType"])
-                    data_frame = create_table(data_frame, data)
+                if accnt_assignment:
+                    for item in accnt_assignment:
+                        data = []
+                        principal_name = get_principal_name(
+                            identity_store,
+                            identity_store_id,
+                            item["PrincipalId"],
+                            item["PrincipalType"],
+                        )
+                        permission_set_name = get_permission_set_name(
+                            sso_admin, instance_arn, item["PermissionSetArn"]
+                        )
+                        data.append(accnt["id"])
+                        data.append(accnt["name"])
+                        data.append(permission_set_name)
+                        data.append(principal_name)
+                        data.append(item["PrincipalType"])
+                        data_frame = create_table(data_frame, data)
             write_to_excel(data_frame)
 
     except Exception as exception:
@@ -153,4 +154,6 @@ def main():
 
 
 if __name__ == "__main__":
+    threaded_start = time.time()
     main()
+    print("Time:", time.time() - threaded_start)
